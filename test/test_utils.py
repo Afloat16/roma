@@ -105,6 +105,34 @@ class TestUtils(unittest.TestCase):
                     count_difference = torch.sum(torch.sign(torch.sum(axis * q, dim=-1)))
                     self.assertTrue(torch.abs(count_difference) < 10.0 * np.sqrt(size))
 
+    def test_random_generator_reproducibility(self):
+        for sample in (roma.random_unitquat, roma.random_rotmat):
+            for dtype in (torch.float32, torch.float64):
+                first = sample((2, 3), dtype=dtype, generator=torch.Generator().manual_seed(41))
+                second = sample((2, 3), dtype=dtype, generator=torch.Generator().manual_seed(41))
+                self.assertTrue(torch.equal(first, second))
+
+    def test_random_generator_does_not_consume_global_state(self):
+        state = torch.random.get_rng_state()
+        roma.random_unitquat(10, generator=torch.Generator().manual_seed(42))
+        self.assertTrue(torch.equal(state, torch.random.get_rng_state()))
+
+    def test_random_generator_shoemake_reference(self):
+        generator = torch.Generator().manual_seed(43)
+        uniforms = [torch.rand((2, 3), generator=generator, dtype=torch.float64) for _ in range(3)]
+        u, a, b = uniforms
+        expected = torch.stack(
+            (
+                torch.sqrt(1 - u) * torch.sin(2 * np.pi * a),
+                torch.sqrt(1 - u) * torch.cos(2 * np.pi * a),
+                torch.sqrt(u) * torch.sin(2 * np.pi * b),
+                torch.sqrt(u) * torch.cos(2 * np.pi * b),
+            ),
+            dim=-1,
+        )
+        actual = roma.random_unitquat((2, 3), dtype=torch.float64, generator=torch.Generator().manual_seed(43))
+        self.assertTrue(torch.equal(actual, expected))
+
     def test_unitquat(self):
         batch_size = 100
         for dtype in (torch.float32, torch.float64):
